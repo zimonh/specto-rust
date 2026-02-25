@@ -2642,6 +2642,9 @@ let midiMaxSimultaneousParam = 4;
 let midiTimeOffsetParam = 0;
 let midiMinFreqParam = 80;
 let midiMaxFreqParam = 4000; // seconds: positive = MIDI plays later, negative = MIDI plays earlier
+let midiMergeWindowParam = 8;  // cols ahead to look for a matching note to merge with
+let midiGapSizeParam = 4;      // max gap (cols) to bridge when merging
+let midiGlueIntensityParam = 0.5; // 0..1 — scales both merge window and gap aggressiveness
 
 const midiOverlayCheckbox = document.getElementById('midiOverlay');
 const midiOverlayControls = document.getElementById('midiOverlayControls');
@@ -2703,6 +2706,36 @@ if (midiMaxFreqSlider) {
   midiMaxFreqSlider.addEventListener('input', () => {
     midiMaxFreqParam = parseInt(midiMaxFreqSlider.value);
     if (midiMaxFreqValueEl) midiMaxFreqValueEl.textContent = midiMaxFreqParam + ' Hz';
+    drawMidiOverlay();
+  });
+}
+
+const midiMergeWindowSlider = document.getElementById('midiMergeWindow');
+const midiMergeWindowValueEl = document.getElementById('midiMergeWindowValue');
+if (midiMergeWindowSlider) {
+  midiMergeWindowSlider.addEventListener('input', () => {
+    midiMergeWindowParam = parseInt(midiMergeWindowSlider.value);
+    if (midiMergeWindowValueEl) midiMergeWindowValueEl.textContent = String(midiMergeWindowParam);
+    drawMidiOverlay();
+  });
+}
+
+const midiGapSizeSlider = document.getElementById('midiGapSize');
+const midiGapSizeValueEl = document.getElementById('midiGapSizeValue');
+if (midiGapSizeSlider) {
+  midiGapSizeSlider.addEventListener('input', () => {
+    midiGapSizeParam = parseInt(midiGapSizeSlider.value);
+    if (midiGapSizeValueEl) midiGapSizeValueEl.textContent = String(midiGapSizeParam);
+    drawMidiOverlay();
+  });
+}
+
+const midiGlueIntensitySlider = document.getElementById('midiGlueIntensity');
+const midiGlueIntensityValueEl = document.getElementById('midiGlueIntensityValue');
+if (midiGlueIntensitySlider) {
+  midiGlueIntensitySlider.addEventListener('input', () => {
+    midiGlueIntensityParam = parseFloat(midiGlueIntensitySlider.value);
+    if (midiGlueIntensityValueEl) midiGlueIntensityValueEl.textContent = midiGlueIntensityParam.toFixed(2);
     drawMidiOverlay();
   });
 }
@@ -2897,13 +2930,18 @@ function analyzeMidiNotes() {
     }
   }
 
-  // Merge same-note regions that are very close together (gap < mergeGap cols)
-  const mergeGap = Math.max(4, Math.round(midiMinDurationParam * 0.5));
+  // Merge same-note regions using the three merge/gap/glue params.
+  // glueIntensity scales the effective window and gap thresholds (0=off, 1=max).
+  const glue = midiGlueIntensityParam;
+  const effectiveWindow = Math.round(midiMergeWindowParam * glue);
+  const effectiveGap = Math.round(midiGapSizeParam * glue);
   completedRegions.sort((a, b) => a.note - b.note || a.xStart - b.xStart);
   const merged = [];
   for (const region of completedRegions) {
     const prev = merged.length > 0 ? merged[merged.length - 1] : null;
-    if (prev && prev.note === region.note && (region.xStart - prev.xEnd) <= mergeGap) {
+    const gap = prev ? region.xStart - prev.xEnd : Infinity;
+    // Merge if: same note, gap fits within gapSize, AND region starts within mergeWindow ahead of prev end
+    if (prev && prev.note === region.note && gap <= effectiveGap && gap <= effectiveWindow) {
       prev.xEnd = Math.max(prev.xEnd, region.xEnd);
     } else {
       merged.push({ ...region });

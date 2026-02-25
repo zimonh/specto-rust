@@ -380,6 +380,15 @@
           <div>
             <label for="midiMaxFreq" class="block mb-1">Max freq: <span id="midiMaxFreqValue">4000 Hz</span></label>
             <input type="range" id="midiMaxFreq" min="500" max="12000" step="100" value="4000" class="w-full" />
+
+            <label for="midiMergeWindow" class="block mb-1 mt-2">Merge window (cols): <span id="midiMergeWindowValue">8</span></label>
+            <input type="range" id="midiMergeWindow" min="0" max="80" step="1" value="8" class="w-full" />
+
+            <label for="midiGapSize" class="block mb-1 mt-2">Gap size (cols): <span id="midiGapSizeValue">4</span></label>
+            <input type="range" id="midiGapSize" min="0" max="40" step="1" value="4" class="w-full" />
+
+            <label for="midiGlueIntensity" class="block mb-1 mt-2">Glue intensity: <span id="midiGlueIntensityValue">0.50</span></label>
+            <input type="range" id="midiGlueIntensity" min="0" max="1" step="0.01" value="0.5" class="w-full" />
           </div>
           <div class="flex gap-2 items-center pt-1 flex-wrap">
             <button id="toggleMidiMute" class="px-3 py-1.5 bg-yellow-800 rounded hover:bg-yellow-700 text-sm">
