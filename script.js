@@ -2987,27 +2987,12 @@ function drawMidiOverlay() {
   const regions = analyzeMidiNotes();
   const canvasHeight = canvas.height;
 
-  const sourceCtx = canvas.getContext('2d');
-
   for (const { note, xStart, xEnd } of regions) {
     const noteFreq = 440 * Math.pow(2, (note - 69) / 12);
     const noteY = Math.round(freqToCanvasY(noteFreq, canvasHeight));
     const w = xEnd - xStart;
 
-    // Sample a strip of pixels from the spectrogram at the centre of this region
-    // to get the exact rendered hue rather than recomputing it.
-    const sampleX = Math.round(xStart + w / 2);
-    const sampleY = Math.max(0, Math.min(canvasHeight - 5, noteY - 2));
-    const sampleW = Math.min(8, xEnd - sampleX);
-    let sr = 0, sg = 0, sb = 0, sCount = 0;
-    if (sampleW > 0) {
-      const pd = sourceCtx.getImageData(sampleX, sampleY, sampleW, 5).data;
-      for (let i = 0; i < pd.length; i += 4) {
-        sr += pd[i]; sg += pd[i + 1]; sb += pd[i + 2]; sCount++;
-      }
-      sr /= sCount; sg /= sCount; sb /= sCount;
-    }
-    const sampledHue = sCount > 0 ? rgbToHue(sr, sg, sb) : noteClassHue(note % 12);
+    const sampledHue = noteClassHue(note % 12);
 
     midiCtx.fillStyle = `hsla(${sampledHue}, 100%, 60%, 0.85)`;
     midiCtx.fillRect(xStart, noteY - 2, w, 4);
