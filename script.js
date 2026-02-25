@@ -3290,9 +3290,10 @@ function scheduleMidiPass(actx) {
     const tStart = xToActxTime(xStart);
     const tEnd = xToActxTime(xEnd);
     if (tEnd < now) continue;          // already passed
+    if (tStart < now) continue;        // started before playhead — skip
     if (tStart > windowEnd) continue;  // too far ahead
 
-    const schedStart = Math.max(now + 0.01, tStart);
+    const schedStart = tStart;
     const dur = Math.max(0.05, tEnd - schedStart);
     midiScheduledSongTimes.add(key);
 
