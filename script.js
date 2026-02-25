@@ -45,6 +45,7 @@ function updateCanvasResolution() {
   playbackCanvas.height = canvas.height;
   midiCanvas.width = canvas.width;
   midiCanvas.height = canvas.height;
+  midiCanvas.style.display = midiOverlayEnabled ? '' : 'none';
 }
 
 // Monitor container resize and update canvas resolution
@@ -63,6 +64,7 @@ const resizeObserver = new ResizeObserver((entries) => {
     playbackCanvas.height = canvas.height;
     midiCanvas.width = canvas.width;
     midiCanvas.height = canvas.height;
+    midiCanvas.style.display = midiOverlayEnabled ? '' : 'none';
 
     cssWidth = containerWidth;
     cssHeight = containerHeight;
@@ -2911,9 +2913,9 @@ function analyzeMidiNotes() {
 }
 
 function drawMidiOverlay() {
-  // Resize first (this clears the canvas automatically), then clear any remainder
   midiCanvas.width = canvas.width;
   midiCanvas.height = canvas.height;
+  midiCanvas.style.display = midiOverlayEnabled ? '' : 'none';
   midiCtx.clearRect(0, 0, midiCanvas.width, midiCanvas.height);
 
   if (!midiOverlayEnabled || spectoColorSchemeParam !== 4) return;
@@ -3141,6 +3143,7 @@ let midiMasterGain = null;
 let audioPlayGain = null;
 let midiSchedulerInterval = null;
 let midiScheduledSongTimes = new Set(); // "note:songTimeSec_2dp" keys already scheduled
+let midiPlaybackSongOffset = 0; // song time (sec) at which audio started playing
 let midiSoundfontInstrument = null; // soundfont-player instrument instance
 let midiSoundfontLoading = false;
 
@@ -3171,15 +3174,16 @@ function scheduleMidiPass(actx) {
   const windowEnd = now + MIDI_LOOKAHEAD;
 
   // Purge stale keys for notes already past (keeps Set from growing forever)
-  const songNow = (now - midiTimeOffsetParam);
+  const songNow = midiPlaybackSongOffset + (now - playbackStartTime) - midiTimeOffsetParam;
   for (const key of midiScheduledSongTimes) {
     const t = parseFloat(key.split(':')[1]);
     if (t < songNow - 2) midiScheduledSongTimes.delete(key);
   }
 
-  // Convert canvas x → song time and actx time
+  // Convert canvas x → song time → actx time
+  // actx_time = playbackStartTime + (songSec - midiPlaybackSongOffset) + midiTimeOffsetParam
   const xToSongSec = x => ((scrollOffset + x / timeZoom) * hopSizeParam) / sampleRateVal;
-  const xToActxTime = x => xToSongSec(x) + midiTimeOffsetParam;
+  const xToActxTime = x => playbackStartTime + (xToSongSec(x) - midiPlaybackSongOffset) + midiTimeOffsetParam;
 
   for (const { note, xStart, xEnd } of regions) {
     const songSec = xToSongSec(xStart);
@@ -3218,6 +3222,7 @@ function scheduleMidiPass(actx) {
 function startMidiWithAudio(actx) {
   if (!midiOverlayEnabled || spectoColorSchemeParam !== 4) return;
   stopMidiPlayback();
+  midiPlaybackSongOffset = playbackPauseTime; // song offset when audio started
 
   midiMasterGain = actx.createGain();
   midiMasterGain.gain.value = document.getElementById('toggleMidiMute')?.classList.contains('muted') ? 0 : 0.3;

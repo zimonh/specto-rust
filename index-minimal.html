@@ -98,7 +98,7 @@
     <div style="height: 58px; flex-shrink:0;"></div>
 
     <!-- MIDI panel -->
-    <div id="midiPanel" class="hidden fixed z-50 bg-gray-900 border border-purple-700 rounded-xl shadow-xl text-sm" style="bottom:8px; right:0; padding:3px; width:260px;">
+    <div id="midiPanel" class="hidden fixed z-50 bg-gray-900 border border-purple-700 rounded-xl shadow-xl text-sm" style="bottom:8px; right:0; padding:3px; width:260px; max-height:calc(100vh - 70px); overflow-y:auto;">
       <div class="space-y-3" style="padding:13px 13px 13px 13px;">
       <div class="flex justify-between items-center mb-1">
         <span class="font-semibold text-purple-300">MIDI Overlay</span>
@@ -211,6 +211,7 @@
       }
       #scrollContainer::-webkit-scrollbar { display:none; }
       #scrollContainer canvas { user-select:none; width:100%; height:100%; display:block; }
+      #midiCanvas { display:none; }
 
       /* Hide the settings panel entirely in minimal mode */
       #controls, #settingsToggle, #settingsCollapse, #controlsBackdrop { display:none !important; }
