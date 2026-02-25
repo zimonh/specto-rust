@@ -86,9 +86,10 @@
         const p = document.getElementById('midiPanel');
         const wasHidden = p.classList.contains('hidden');
         p.classList.toggle('hidden');
-        if (wasHidden) {
-          const cb = document.getElementById('midiOverlay');
-          if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
+        const cb = document.getElementById('midiOverlay');
+        if (cb) {
+          cb.checked = wasHidden; // open = checked, close = unchecked
+          cb.dispatchEvent(new Event('change'));
         }
       " class="px-3 py-2 bg-purple-800 rounded hover:bg-purple-700 text-sm font-semibold" title="MIDI overlay">MIDI</button>
     </div>
@@ -101,7 +102,11 @@
       <div class="space-y-3" style="padding:13px 13px 13px 13px;">
       <div class="flex justify-between items-center mb-1">
         <span class="font-semibold text-purple-300">MIDI Overlay</span>
-        <button onclick="document.getElementById('midiPanel').classList.add('hidden')" class="text-gray-400 hover:text-white text-lg leading-none">✕</button>
+        <button onclick="
+          document.getElementById('midiPanel').classList.add('hidden');
+          const cb = document.getElementById('midiOverlay');
+          if (cb && cb.checked) { cb.checked = false; cb.dispatchEvent(new Event('change')); }
+        " class="text-gray-400 hover:text-white text-lg leading-none">✕</button>
       </div>
 
       <!-- Enable toggle (hidden — auto-enabled when panel opens) -->
@@ -124,6 +129,13 @@
       <div>
         <label class="block mb-1 text-gray-300">MIDI time offset: <span id="midiTimeOffsetValue">0.00</span>s</label>
         <input type="range" id="midiTimeOffset" min="-2" max="2" step="0.01" value="0" class="w-full" />
+      </div>
+
+      <!-- Zero padding (affects pitch resolution for detection) -->
+      <div>
+        <label class="block mb-1 text-gray-300">Zero Padding: <span id="midiZeroPadValue">3x</span></label>
+        <input type="range" id="midiZeroPad" min="1" max="8" step="1" value="3" class="w-full" />
+        <div class="text-xs text-gray-500">Higher = better pitch resolution</div>
       </div>
 
       <!-- Freq filter -->

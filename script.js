@@ -1030,9 +1030,36 @@ zeroPadFactorSlider.addEventListener('input', () => {
   zeroPadFactorParam = parseInt(zeroPadFactorSlider.value);
   document.getElementById('zeroPadFactorValue').textContent =
     `${zeroPadFactorParam}x`;
+  // Sync the MIDI panel zero-pad slider if present
+  const midiZeroPad = document.getElementById('midiZeroPad');
+  if (midiZeroPad) {
+    midiZeroPad.value = String(zeroPadFactorParam);
+    const midiZeroPadValue = document.getElementById('midiZeroPadValue');
+    if (midiZeroPadValue) midiZeroPadValue.textContent = `${zeroPadFactorParam}x`;
+  }
   invalidateTileCache();
   if (spectrogramId !== null) renderSpectrogram();
 });
+
+// MIDI panel zero-pad slider (minimal view) — mirrors main zeroPadFactor
+(function () {
+  const midiZeroPad = document.getElementById('midiZeroPad');
+  if (!midiZeroPad) return;
+  // Init value to match main slider
+  if (zeroPadFactorSlider) midiZeroPad.value = zeroPadFactorSlider.value;
+  midiZeroPad.addEventListener('input', () => {
+    zeroPadFactorParam = parseInt(midiZeroPad.value);
+    const midiZeroPadValue = document.getElementById('midiZeroPadValue');
+    if (midiZeroPadValue) midiZeroPadValue.textContent = `${zeroPadFactorParam}x`;
+    // Keep main slider in sync
+    if (zeroPadFactorSlider) {
+      zeroPadFactorSlider.value = String(zeroPadFactorParam);
+      document.getElementById('zeroPadFactorValue').textContent = `${zeroPadFactorParam}x`;
+    }
+    invalidateTileCache();
+    if (spectrogramId !== null) renderSpectrogram();
+  });
+})();
 
 followPlaybackCheckbox.addEventListener('change', () => {
   followPlayback = followPlaybackCheckbox.checked;
@@ -2606,6 +2633,7 @@ document.querySelectorAll('.preset-btn').forEach((btn) => {
 // ============================================================
 
 let midiOverlayEnabled = false;
+midiCanvas.style.display = 'none'; // hidden until checkbox is checked
 let midiMinBrightnessParam = 0.15;
 let midiMinDurationParam = 10;
 let midiMaxSimultaneousParam = 4;
@@ -2628,7 +2656,9 @@ if (midiOverlayCheckbox) {
     if (midiOverlayControls) {
       midiOverlayControls.classList.toggle('hidden', !midiOverlayEnabled);
     }
-    drawMidiOverlay();
+    midiCanvas.style.display = midiOverlayEnabled ? '' : 'none';
+    if (!midiOverlayEnabled) midiCtx.clearRect(0, 0, midiCanvas.width, midiCanvas.height);
+    else drawMidiOverlay();
   });
 }
 
@@ -2696,13 +2726,18 @@ function midiNoteName(note) {
 
 function hueToNoteClass(hue) {
   const fifthsToClass = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
-  const idx = Math.round(hue / 30) % 12;
+  const offset = fifthsHueOffsetSlider ? parseFloat(fifthsHueOffsetSlider.value) : 0;
+  // Remove the hue offset that was baked in by the renderer before indexing
+  const adjusted = ((hue - offset) % 360 + 360) % 360;
+  const idx = Math.round(adjusted / 30) % 12;
   return fifthsToClass[idx];
 }
 
 function noteClassHue(noteClass) {
   const classToFifths = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
-  return classToFifths[noteClass] * 30;
+  const offset = fifthsHueOffsetSlider ? parseFloat(fifthsHueOffsetSlider.value) : 0;
+  // Mirror what the renderer does: apply the hue offset to the overlay color too
+  return (classToFifths[noteClass] * 30 + offset) % 360;
 }
 
 function rgbToHue(r, g, b) {
@@ -2881,8 +2916,7 @@ function drawMidiOverlay() {
   midiCanvas.height = canvas.height;
   midiCtx.clearRect(0, 0, midiCanvas.width, midiCanvas.height);
 
-  const midiPanelVisible = !document.getElementById('midiPanel')?.classList.contains('hidden');
-  if ((!midiOverlayEnabled && !midiPanelVisible) || spectoColorSchemeParam !== 4) return;
+  if (!midiOverlayEnabled || spectoColorSchemeParam !== 4) return;
   if (!spectrogramId) return;
 
   const regions = analyzeMidiNotes();
@@ -3182,8 +3216,7 @@ function scheduleMidiPass(actx) {
 
 // Called when the normal play button starts playback.
 function startMidiWithAudio(actx) {
-  const midiPanelVisible = !document.getElementById('midiPanel')?.classList.contains('hidden');
-  if ((!midiOverlayEnabled && !midiPanelVisible) || spectoColorSchemeParam !== 4) return;
+  if (!midiOverlayEnabled || spectoColorSchemeParam !== 4) return;
   stopMidiPlayback();
 
   midiMasterGain = actx.createGain();

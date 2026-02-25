@@ -18,8 +18,8 @@ export class MultiBandManager {
     // Initialize with default 3-band configuration
     // fftMultiplier: low=32 (→16384), mid=8 (→4096), high=4 (→2048) at hop=512
     this.addBand(20, 80, 32, 1.0, 4);
-    this.addBand(80, 350, 8, 1.0, 2);
-    this.addBand(350, 24000, 4, 1.0, 1);
+    this.addBand(80, 265, 39, 1.0, 2);
+    this.addBand(265, 24000, 23, 1.0, 1);
 
     // Add button click handler
     if (this.addButton) {
