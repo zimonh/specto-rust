@@ -2865,7 +2865,8 @@ function analyzeMidiNotes() {
 
     if (x < canvasWidth) {
       const pixelData = sourceCtx.getImageData(x, 0, 1, canvasHeight).data;
-      const notePitchClasses = new Map(); // noteNum -> pitchClass
+      // noteNum -> accumulated brightness weight
+      const noteWeights = new Map();
 
       for (let y = 0; y < canvasHeight; y++) {
         const idx = y * 4;
@@ -2876,35 +2877,59 @@ function analyzeMidiNotes() {
 
         if (brightness < midiMinBrightnessParam) continue;
 
-        const hue = rgbToHue(r, g, b);
-        const noteClass = hueToNoteClass(hue);
         const freq = canvasYToFreq(y, canvasHeight);
         if (freq <= 0 || freq < midiMinFreqParam || freq > midiMaxFreqParam) continue;
-        const noteNum = freqToMidiNote(freq);
-        if (noteNum === null) continue;
 
-        // Only keep brightest occurrence per note number
-        if (!notePitchClasses.has(noteNum)) {
-          notePitchClasses.set(noteNum, noteClass);
+        // Rough note from frequency (gives us the correct octave region)
+        const roughNote = freqToMidiNote(freq);
+        if (roughNote === null) continue;
+
+        // Compute saturation to judge how much to trust the color
+        const rn = r / 255, gn = g / 255, bn = b / 255;
+        const maxC = Math.max(rn, gn, bn);
+        const minC = Math.min(rn, gn, bn);
+        const sat = maxC === 0 ? 0 : (maxC - minC) / maxC;
+
+        let noteNum;
+        if (sat >= 0.25) {
+          // Color is reliable: snap pitch class from hue, keep octave from frequency
+          const hue = rgbToHue(r, g, b);
+          const colorClass = hueToNoteClass(hue);
+          // Find the octave that puts colorClass closest to roughNote
+          const octave = Math.round((roughNote - colorClass) / 12);
+          noteNum = octave * 12 + colorClass;
+          // Sanity: if snap moved us more than 6 semitones from freq estimate, trust freq instead
+          if (Math.abs(noteNum - roughNote) > 6) noteNum = roughNote;
+        } else {
+          // Low saturation (grey/white) — fall back to pure frequency
+          noteNum = roughNote;
+        }
+
+        // Accumulate brightness weight per note (keeps brightest band's contribution)
+        noteWeights.set(noteNum, (noteWeights.get(noteNum) || 0) + brightness);
+      }
+
+      // Drop notes whose accumulated weight is less than 15% of the dominant note's weight.
+      // This kills sliver-colors that appear alongside a strong dominant note.
+      if (noteWeights.size > 0) {
+        const maxWeight = Math.max(...noteWeights.values());
+        for (const [n, w] of noteWeights) {
+          if (w < maxWeight * 0.15) noteWeights.delete(n);
         }
       }
 
       // Extract unique pitch classes and check if drum/transient
-      const pitchClasses = new Set(notePitchClasses.values());
-      const noteNums = Array.from(notePitchClasses.keys());
+      const noteNums = Array.from(noteWeights.keys());
+      const pitchClasses = new Set(noteNums.map(n => n % 12));
 
       if (pitchClasses.size > midiMaxSimultaneousParam && noteNums.length > 0) {
-        // Check octave span
         const minNote = Math.min(...noteNums);
         const maxNote = Math.max(...noteNums);
-        const octaveSpan = (maxNote - minNote) / 12;
-        if (octaveSpan > 2) {
-          isDrum = true;
-        }
+        if ((maxNote - minNote) / 12 > 2) isDrum = true;
       }
 
       if (!isDrum) {
-        notesThisCol = new Set(notePitchClasses.keys());
+        notesThisCol = new Set(noteWeights.keys());
       }
     }
 
@@ -3123,27 +3148,47 @@ function analyzeMidiNotesFromCanvas(srcCanvas, canvasWidth, canvasHeight) {
 
     if (x < canvasWidth) {
       const pixelData = srcCtx.getImageData(x, 0, 1, canvasHeight).data;
-      const notePitchClasses = new Map();
+      const noteWeights = new Map();
 
       for (let y = 0; y < canvasHeight; y++) {
         const idx = y * 4;
         const r = pixelData[idx], g = pixelData[idx + 1], b = pixelData[idx + 2];
-        if ((r + g + b) / 765 < midiMinBrightnessParam) continue;
-        const noteClass = hueToNoteClass(rgbToHue(r, g, b));
+        const brightness = (r + g + b) / 765;
+        if (brightness < midiMinBrightnessParam) continue;
         const freq = canvasYToFreq(y, canvasHeight);
         if (freq <= 0 || freq < midiMinFreqParam || freq > midiMaxFreqParam) continue;
-        const noteNum = freqToMidiNote(freq);
-        if (noteNum === null) continue;
-        if (!notePitchClasses.has(noteNum)) notePitchClasses.set(noteNum, noteClass);
+        const roughNote = freqToMidiNote(freq);
+        if (roughNote === null) continue;
+
+        const rn = r / 255, gn = g / 255, bn = b / 255;
+        const maxC = Math.max(rn, gn, bn);
+        const sat = maxC === 0 ? 0 : (maxC - Math.min(rn, gn, bn)) / maxC;
+
+        let noteNum;
+        if (sat >= 0.25) {
+          const colorClass = hueToNoteClass(rgbToHue(r, g, b));
+          const octave = Math.round((roughNote - colorClass) / 12);
+          noteNum = octave * 12 + colorClass;
+          if (Math.abs(noteNum - roughNote) > 6) noteNum = roughNote;
+        } else {
+          noteNum = roughNote;
+        }
+        noteWeights.set(noteNum, (noteWeights.get(noteNum) || 0) + brightness);
       }
 
-      const pitchClasses = new Set(notePitchClasses.values());
-      const noteNums = Array.from(notePitchClasses.keys());
+      if (noteWeights.size > 0) {
+        const maxWeight = Math.max(...noteWeights.values());
+        for (const [n, w] of noteWeights) {
+          if (w < maxWeight * 0.15) noteWeights.delete(n);
+        }
+      }
+      const noteNums = Array.from(noteWeights.keys());
+      const pitchClasses = new Set(noteNums.map(n => n % 12));
       if (pitchClasses.size > midiMaxSimultaneousParam && noteNums.length > 0) {
         const span = (Math.max(...noteNums) - Math.min(...noteNums)) / 12;
         if (span > 2) isDrum = true;
       }
-      if (!isDrum) notesThisCol = new Set(notePitchClasses.keys());
+      if (!isDrum) notesThisCol = new Set(noteWeights.keys());
     }
 
     for (const [noteNum, run] of activeRuns) {
