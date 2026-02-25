@@ -22,6 +22,8 @@ const overlayCanvas = document.getElementById('overlayCanvas');
 const overlayCtx = overlayCanvas.getContext('2d');
 const playbackCanvas = document.getElementById('playbackCanvas');
 const playbackCtx = playbackCanvas.getContext('2d');
+const midiCanvas = document.getElementById('midiCanvas');
+const midiCtx = midiCanvas.getContext('2d');
 const tooltip = document.getElementById('tooltip');
 const tooltipTime = document.getElementById('tooltipTime');
 const tooltipFreq = document.getElementById('tooltipFreq');
@@ -41,6 +43,8 @@ function updateCanvasResolution() {
   overlayCanvas.height = canvas.height;
   playbackCanvas.width = canvas.width;
   playbackCanvas.height = canvas.height;
+  midiCanvas.width = canvas.width;
+  midiCanvas.height = canvas.height;
 }
 
 // Monitor container resize and update canvas resolution
@@ -57,6 +61,8 @@ const resizeObserver = new ResizeObserver((entries) => {
     overlayCanvas.height = canvas.height;
     playbackCanvas.width = canvas.width;
     playbackCanvas.height = canvas.height;
+    midiCanvas.width = canvas.width;
+    midiCanvas.height = canvas.height;
 
     cssWidth = containerWidth;
     cssHeight = containerHeight;
@@ -1637,7 +1643,9 @@ playPauseBtn.addEventListener('click', () => {
 
   if (isPlaying) {
     // Pause
+    stopMidiPlayback();
     stopPlayback();
+    stopAudioPlayGain();
     playbackPauseTime = getCurrentPlaybackTime();
   } else {
     // Play
@@ -1649,8 +1657,11 @@ playPauseBtn.addEventListener('click', () => {
 
     audioSource = audioContext.createBufferSource();
     audioSource.buffer = audioBuffer;
-    audioSource.connect(audioContext.destination);
+    const audioDest = wrapAudioWithGain(audioContext);
+    audioSource.connect(audioDest);
     audioSource.start(0, playbackPauseTime);
+
+    startMidiWithAudio(audioContext);
 
     playbackStartTime = audioContext.currentTime;
     isPlaying = true;
@@ -1664,6 +1675,8 @@ playPauseBtn.addEventListener('click', () => {
         playbackPauseTime = 0;
         updatePlaybackLine();
       }
+      stopMidiPlayback();
+      stopAudioPlayGain();
     };
 
     updatePlaybackLine();
@@ -1750,6 +1763,7 @@ function renderSpectrogram() {
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(tmp, 0, 0, visibleWindows, height, 0, 0, width, height);
       drawMarkers();
+      drawMidiOverlay();
       if (!isPlaying) updatePlaybackLine();
       return; // skip tiled path while dragging
     }
@@ -1860,6 +1874,7 @@ function renderSpectrogram() {
 
     // Draw markers on overlay (only when viewport changes)
     drawMarkers();
+    drawMidiOverlay();
 
     // Update playback line (lightweight, separate canvas)
     if (!isPlaying) {
@@ -2585,5 +2600,575 @@ document.querySelectorAll('.preset-btn').forEach((btn) => {
     }
   });
 });
+
+// ============================================================
+// MIDI CHORD OVERLAY
+// ============================================================
+
+let midiOverlayEnabled = false;
+let midiMinBrightnessParam = 0.15;
+let midiMinDurationParam = 10;
+let midiMaxSimultaneousParam = 4;
+let midiTimeOffsetParam = 0; // seconds: positive = MIDI plays later, negative = MIDI plays earlier
+
+const midiOverlayCheckbox = document.getElementById('midiOverlay');
+const midiOverlayControls = document.getElementById('midiOverlayControls');
+const midiMinBrightnessSlider = document.getElementById('midiMinBrightness');
+const midiMinBrightnessValueEl = document.getElementById('midiMinBrightnessValue');
+const midiMinDurationSlider = document.getElementById('midiMinDuration');
+const midiMinDurationValueEl = document.getElementById('midiMinDurationValue');
+const midiMaxSimultaneousSlider = document.getElementById('midiMaxSimultaneous');
+const midiMaxSimultaneousValueEl = document.getElementById('midiMaxSimultaneousValue');
+
+if (midiOverlayCheckbox) {
+  midiOverlayCheckbox.addEventListener('change', () => {
+    midiOverlayEnabled = midiOverlayCheckbox.checked;
+    if (midiOverlayControls) {
+      midiOverlayControls.classList.toggle('hidden', !midiOverlayEnabled);
+    }
+    drawMidiOverlay();
+  });
+}
+
+if (midiMinBrightnessSlider) {
+  midiMinBrightnessSlider.addEventListener('input', () => {
+    midiMinBrightnessParam = parseFloat(midiMinBrightnessSlider.value);
+    if (midiMinBrightnessValueEl) midiMinBrightnessValueEl.textContent = midiMinBrightnessParam.toFixed(2);
+    drawMidiOverlay();
+  });
+}
+
+if (midiMinDurationSlider) {
+  midiMinDurationSlider.addEventListener('input', () => {
+    midiMinDurationParam = parseInt(midiMinDurationSlider.value);
+    if (midiMinDurationValueEl) midiMinDurationValueEl.textContent = String(midiMinDurationParam);
+    drawMidiOverlay();
+  });
+}
+
+if (midiMaxSimultaneousSlider) {
+  midiMaxSimultaneousSlider.addEventListener('input', () => {
+    midiMaxSimultaneousParam = parseInt(midiMaxSimultaneousSlider.value);
+    if (midiMaxSimultaneousValueEl) midiMaxSimultaneousValueEl.textContent = String(midiMaxSimultaneousParam);
+    drawMidiOverlay();
+  });
+}
+
+const midiTimeOffsetSlider = document.getElementById('midiTimeOffset');
+const midiTimeOffsetValueEl = document.getElementById('midiTimeOffsetValue');
+if (midiTimeOffsetSlider) {
+  midiTimeOffsetSlider.addEventListener('input', () => {
+    midiTimeOffsetParam = parseFloat(midiTimeOffsetSlider.value);
+    if (midiTimeOffsetValueEl) midiTimeOffsetValueEl.textContent = midiTimeOffsetParam.toFixed(2);
+  });
+}
+
+function freqToMidiNote(freq) {
+  if (freq <= 0) return null;
+  return Math.round(69 + 12 * Math.log2(freq / 440));
+}
+
+function midiNoteName(note) {
+  const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  return names[note % 12] + Math.floor(note / 12 - 1);
+}
+
+function hueToNoteClass(hue) {
+  const fifthsToClass = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
+  const idx = Math.round(hue / 30) % 12;
+  return fifthsToClass[idx];
+}
+
+function noteClassHue(noteClass) {
+  const classToFifths = [0, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10, 5];
+  return classToFifths[noteClass] * 30;
+}
+
+function rgbToHue(r, g, b) {
+  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const delta = max - min;
+  if (delta === 0) return 0;
+  let hue;
+  if (max === rn) {
+    hue = ((gn - bn) / delta) % 6;
+  } else if (max === gn) {
+    hue = (bn - rn) / delta + 2;
+  } else {
+    hue = (rn - gn) / delta + 4;
+  }
+  hue = hue * 60;
+  if (hue < 0) hue += 360;
+  return hue;
+}
+
+function canvasYToFreq(y, canvasHeight) {
+  // Y=0 is top (high freq), Y=canvasHeight is bottom (low freq)
+  const ratio = (canvasHeight - y) / canvasHeight;
+  const fmin = Math.max(1, minFreqParam);
+  const fmax = Math.max(fmin + 1, maxFreqParam);
+  return mapRatioToFreq(ratio, fmin, fmax, scaleModeParam);
+}
+
+function freqToCanvasY(freq, canvasHeight) {
+  const fmin = Math.max(1, minFreqParam);
+  const fmax = Math.max(fmin + 1, maxFreqParam);
+  const ratio = mapFreqToRatio(freq, fmin, fmax, scaleModeParam);
+  return canvasHeight - ratio * canvasHeight;
+}
+
+function analyzeMidiNotes() {
+  const canvasWidth = canvas.width;
+  const canvasHeight = canvas.height;
+  const sourceCtx = canvas.getContext('2d');
+
+  // Per note: track current run start and length
+  // note -> { start, length }
+  const activeRuns = new Map();
+  const completedRegions = [];
+
+  for (let x = 0; x <= canvasWidth; x++) {
+    // On the last iteration (x === canvasWidth), flush all active runs
+    let notesThisCol = new Set();
+    let isDrum = false;
+
+    if (x < canvasWidth) {
+      const pixelData = sourceCtx.getImageData(x, 0, 1, canvasHeight).data;
+      const notePitchClasses = new Map(); // noteNum -> pitchClass
+
+      for (let y = 0; y < canvasHeight; y++) {
+        const idx = y * 4;
+        const r = pixelData[idx];
+        const g = pixelData[idx + 1];
+        const b = pixelData[idx + 2];
+        const brightness = (r + g + b) / 765;
+
+        if (brightness < midiMinBrightnessParam) continue;
+
+        const hue = rgbToHue(r, g, b);
+        const noteClass = hueToNoteClass(hue);
+        const freq = canvasYToFreq(y, canvasHeight);
+        if (freq <= 0) continue;
+        const noteNum = freqToMidiNote(freq);
+        if (noteNum === null) continue;
+
+        // Only keep brightest occurrence per note number
+        if (!notePitchClasses.has(noteNum)) {
+          notePitchClasses.set(noteNum, noteClass);
+        }
+      }
+
+      // Extract unique pitch classes and check if drum/transient
+      const pitchClasses = new Set(notePitchClasses.values());
+      const noteNums = Array.from(notePitchClasses.keys());
+
+      if (pitchClasses.size > midiMaxSimultaneousParam && noteNums.length > 0) {
+        // Check octave span
+        const minNote = Math.min(...noteNums);
+        const maxNote = Math.max(...noteNums);
+        const octaveSpan = (maxNote - minNote) / 12;
+        if (octaveSpan > 2) {
+          isDrum = true;
+        }
+      }
+
+      if (!isDrum) {
+        notesThisCol = new Set(notePitchClasses.keys());
+      }
+    }
+
+    // Update runs: complete runs for notes no longer active, extend active ones
+    const toRemove = [];
+    for (const [noteNum, run] of activeRuns) {
+      if (!notesThisCol.has(noteNum)) {
+        // Run ended
+        const runLen = x - run.start;
+        if (runLen >= midiMinDurationParam) {
+          completedRegions.push({ note: noteNum, xStart: run.start, xEnd: x });
+        }
+        toRemove.push(noteNum);
+      }
+    }
+    for (const n of toRemove) activeRuns.delete(n);
+
+    // Start new runs for notes not already tracked
+    for (const noteNum of notesThisCol) {
+      if (!activeRuns.has(noteNum)) {
+        activeRuns.set(noteNum, { start: x });
+      }
+    }
+  }
+
+  // Merge same-note regions that are very close together (gap < mergeGap cols)
+  const mergeGap = Math.max(4, Math.round(midiMinDurationParam * 0.5));
+  completedRegions.sort((a, b) => a.note - b.note || a.xStart - b.xStart);
+  const merged = [];
+  for (const region of completedRegions) {
+    const prev = merged.length > 0 ? merged[merged.length - 1] : null;
+    if (prev && prev.note === region.note && (region.xStart - prev.xEnd) <= mergeGap) {
+      prev.xEnd = Math.max(prev.xEnd, region.xEnd);
+    } else {
+      merged.push({ ...region });
+    }
+  }
+  return merged;
+}
+
+function drawMidiOverlay() {
+  // Resize first (this clears the canvas automatically), then clear any remainder
+  midiCanvas.width = canvas.width;
+  midiCanvas.height = canvas.height;
+  midiCtx.clearRect(0, 0, midiCanvas.width, midiCanvas.height);
+
+  const midiPanelVisible = !document.getElementById('midiPanel')?.classList.contains('hidden');
+  if ((!midiOverlayEnabled && !midiPanelVisible) || spectoColorSchemeParam !== 4) return;
+  if (!spectrogramId) return;
+
+  const regions = analyzeMidiNotes();
+  const canvasHeight = canvas.height;
+
+  for (const { note, xStart, xEnd } of regions) {
+    const noteClass = note % 12;
+    const hue = noteClassHue(noteClass);
+    const noteFreq = 440 * Math.pow(2, (note - 69) / 12);
+    const noteY = freqToCanvasY(noteFreq, canvasHeight);
+    const w = xEnd - xStart;
+
+    midiCtx.fillStyle = `hsla(${hue}, 90%, 55%, 0.7)`;
+    midiCtx.fillRect(xStart, noteY - 2, w, 4);
+
+    if (w > 30) {
+      const label = midiNoteName(note);
+      midiCtx.fillStyle = 'white';
+      midiCtx.font = '10px monospace';
+      midiCtx.shadowColor = 'rgba(0,0,0,0.8)';
+      midiCtx.shadowBlur = 3;
+      midiCtx.fillText(label, xStart + 3, noteY - 4);
+      midiCtx.shadowColor = 'transparent';
+      midiCtx.shadowBlur = 0;
+    }
+  }
+}
+
+// ----- MIDI export (full song) -----
+// Streams through the entire spectrogram in chunks, analyzes notes per chunk,
+// then exports everything as a single SMF file.
+async function exportMidi() {
+  if (!spectrogramId || !spectrogramInfo) return;
+  const [, sampleRate, numWindows] = spectrogramInfo;
+
+  const exportBtn = document.getElementById('exportMidi');
+  if (exportBtn) exportBtn.textContent = 'Exporting…';
+
+  // Chunk size matches the visible canvas width for consistent analysis
+  const CHUNK_W = Math.max(256, canvas.width);
+  const canvasH = canvas.height;
+  const totalWindows = Math.floor(numWindows);
+
+  // Temp canvas for rendering each chunk
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = CHUNK_W;
+  tmpCanvas.height = canvasH;
+  const tmpCtx = tmpCanvas.getContext('2d');
+
+  // Collect all regions as absolute song-time pairs {note, tOn, tOff} in seconds
+  const allRegions = [];
+
+  for (let winStart = 0; winStart < totalWindows; winStart += CHUNK_W) {
+    const winCount = Math.min(CHUNK_W, totalWindows - winStart);
+
+    // Render this chunk via WASM
+    const pixels = render_spectrogram_viewport(
+      spectrogramId, winStart, winCount, canvasH,
+      minFreqParam, maxFreqParam, scaleModeParam,
+      gainDbParam, rangeDbParam, freqGainDbPerDecParam,
+      windowTypeParam, zeroPadFactorParam,
+      4, // always Circle of Fifths for MIDI analysis
+      bassSharpParam
+    );
+    const img = new ImageData(new Uint8ClampedArray(pixels), winCount, canvasH);
+    tmpCanvas.width = winCount; // also clears canvas
+    tmpCtx.putImageData(img, 0, 0);
+
+    // Run note detection on this chunk using the temp canvas
+    const chunkRegions = analyzeMidiNotesFromCanvas(tmpCanvas, winCount, canvasH);
+
+    // Convert canvas-x (within chunk) to absolute song time
+    for (const { note, xStart, xEnd } of chunkRegions) {
+      const windowIdxStart = winStart + xStart; // 1 px = 1 window at timeZoom=1 equivalently
+      const windowIdxEnd   = winStart + xEnd;
+      const tOn  = (windowIdxStart * hopSizeParam) / sampleRate;
+      const tOff = (windowIdxEnd   * hopSizeParam) / sampleRate;
+      allRegions.push({ note, tOn, tOff });
+    }
+
+    // Yield to keep the page responsive
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  if (exportBtn) exportBtn.textContent = 'Export MIDI';
+
+  if (allRegions.length === 0) {
+    alert('No notes detected across the full song. Try adjusting MIDI parameters.');
+    return;
+  }
+
+  // Build SMF
+  const TICKS_PER_BEAT = 480;
+  const BPM = 120;
+  const MICROS_PER_BEAT = Math.round(60_000_000 / BPM);
+  const TICKS_PER_SEC = (TICKS_PER_BEAT * BPM) / 60;
+  const secToTick = s => Math.round(s * TICKS_PER_SEC);
+
+  const events = [];
+  for (const { note, tOn, tOff } of allRegions) {
+    events.push({ tick: secToTick(tOn),  type: 'on',  note });
+    events.push({ tick: secToTick(tOff), type: 'off', note });
+  }
+  events.sort((a, b) => a.tick - b.tick || (a.type === 'off' ? -1 : 1));
+
+  function writeVLQ(val) {
+    const bytes = [val & 0x7f];
+    val >>= 7;
+    while (val > 0) { bytes.unshift((val & 0x7f) | 0x80); val >>= 7; }
+    return bytes;
+  }
+
+  const trackBytes = [];
+  trackBytes.push(...writeVLQ(0), 0xff, 0x51, 0x03,
+    (MICROS_PER_BEAT >> 16) & 0xff, (MICROS_PER_BEAT >> 8) & 0xff, MICROS_PER_BEAT & 0xff);
+
+  let prevTick = 0;
+  for (const ev of events) {
+    const delta = Math.max(0, ev.tick - prevTick);
+    prevTick = ev.tick;
+    trackBytes.push(...writeVLQ(delta), ev.type === 'on' ? 0x90 : 0x80, ev.note & 0x7f, ev.type === 'on' ? 100 : 0);
+  }
+  trackBytes.push(0x00, 0xff, 0x2f, 0x00);
+
+  const buf = new ArrayBuffer(14 + 8 + trackBytes.length);
+  const view = new DataView(buf);
+  let pos = 0;
+  view.setUint32(pos, 0x4d546864); pos += 4;
+  view.setUint32(pos, 6);          pos += 4;
+  view.setUint16(pos, 0);          pos += 2;
+  view.setUint16(pos, 1);          pos += 2;
+  view.setUint16(pos, TICKS_PER_BEAT); pos += 2;
+  view.setUint32(pos, 0x4d54726b); pos += 4;
+  view.setUint32(pos, trackBytes.length); pos += 4;
+  for (const b of trackBytes) view.setUint8(pos++, b);
+
+  const blob = new Blob([buf], { type: 'audio/midi' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'specto-notes.mid';
+  a.click();
+  URL.revokeObjectURL(url);
+
+  const toast = document.getElementById('loadingToast');
+  if (toast) {
+    const prev = toast.textContent;
+    toast.textContent = '✓ MIDI exported';
+    toast.style.opacity = '1';
+    setTimeout(() => { toast.style.opacity = '0'; toast.textContent = prev; }, 2500);
+  }
+}
+
+// Like analyzeMidiNotes() but reads from an arbitrary canvas instead of the main spectrogram canvas.
+// xPositions returned are raw pixel columns within that canvas (= window indices when timeZoom=1).
+function analyzeMidiNotesFromCanvas(srcCanvas, canvasWidth, canvasHeight) {
+  const srcCtx = srcCanvas.getContext('2d');
+  const activeRuns = new Map();
+  const completedRegions = [];
+
+  for (let x = 0; x <= canvasWidth; x++) {
+    let notesThisCol = new Set();
+    let isDrum = false;
+
+    if (x < canvasWidth) {
+      const pixelData = srcCtx.getImageData(x, 0, 1, canvasHeight).data;
+      const notePitchClasses = new Map();
+
+      for (let y = 0; y < canvasHeight; y++) {
+        const idx = y * 4;
+        const r = pixelData[idx], g = pixelData[idx + 1], b = pixelData[idx + 2];
+        if ((r + g + b) / 765 < midiMinBrightnessParam) continue;
+        const noteClass = hueToNoteClass(rgbToHue(r, g, b));
+        const freq = canvasYToFreq(y, canvasHeight);
+        if (freq <= 0) continue;
+        const noteNum = freqToMidiNote(freq);
+        if (noteNum === null) continue;
+        if (!notePitchClasses.has(noteNum)) notePitchClasses.set(noteNum, noteClass);
+      }
+
+      const pitchClasses = new Set(notePitchClasses.values());
+      const noteNums = Array.from(notePitchClasses.keys());
+      if (pitchClasses.size > midiMaxSimultaneousParam && noteNums.length > 0) {
+        const span = (Math.max(...noteNums) - Math.min(...noteNums)) / 12;
+        if (span > 2) isDrum = true;
+      }
+      if (!isDrum) notesThisCol = new Set(notePitchClasses.keys());
+    }
+
+    for (const [noteNum, run] of activeRuns) {
+      if (!notesThisCol.has(noteNum)) {
+        if (x - run.start >= midiMinDurationParam)
+          completedRegions.push({ note: noteNum, xStart: run.start, xEnd: x });
+        activeRuns.delete(noteNum);
+      }
+    }
+    for (const noteNum of notesThisCol) {
+      if (!activeRuns.has(noteNum)) activeRuns.set(noteNum, { start: x });
+    }
+  }
+  return completedRegions;
+}
+
+const exportMidiBtn = document.getElementById('exportMidi');
+if (exportMidiBtn) exportMidiBtn.addEventListener('click', exportMidi);
+
+// ----- MIDI piano playback -----
+// MIDI plays alongside normal audio when midiOverlayEnabled is true.
+// Uses a rolling scheduler that re-analyses the canvas every MIDI_SCHEDULE_INTERVAL seconds
+// so notes are always scheduled ahead of the playhead as the viewport scrolls.
+let midiPlaybackNodes = [];
+let midiMasterGain = null;
+let audioPlayGain = null;
+let midiSchedulerInterval = null;
+let midiScheduledUpToActxTime = 0; // actx time we've scheduled notes up to
+let midiSoundfontInstrument = null; // soundfont-player instrument instance
+let midiSoundfontLoading = false;
+
+const MIDI_LOOKAHEAD = 8;        // seconds ahead to schedule
+const MIDI_SCHEDULE_INTERVAL = 4000; // ms between reschedule passes
+
+function stopMidiPlayback() {
+  clearInterval(midiSchedulerInterval);
+  midiSchedulerInterval = null;
+  midiScheduledUpToActxTime = 0;
+  for (const n of midiPlaybackNodes) { try { n.stop(); } catch (_) {} }
+  midiPlaybackNodes = [];
+  midiMasterGain = null;
+}
+
+function stopAudioPlayGain() {
+  audioPlayGain = null;
+}
+
+// Schedule any notes from the current canvas that fall within the lookahead window
+// and haven't been scheduled yet (start time > midiScheduledUpToActxTime).
+function scheduleMidiPass(actx) {
+  if (!midiMasterGain || !spectrogramInfo) return;
+  const [, sampleRateVal] = spectrogramInfo;
+  const regions = analyzeMidiNotes();
+  if (regions.length === 0) return;
+
+  const now = actx.currentTime;
+  // Convert canvas x → absolute actx time
+  const xToActxTime = x => {
+    const songSec = ((scrollOffset + x / timeZoom) * hopSizeParam) / sampleRateVal;
+    return songSec + midiTimeOffsetParam;
+  };
+
+  const windowEnd = now + MIDI_LOOKAHEAD;
+
+  for (const { note, xStart, xEnd } of regions) {
+    const tStart = xToActxTime(xStart);
+    const tEnd = xToActxTime(xEnd);
+    // Skip notes already past or already scheduled
+    if (tEnd < now) continue;
+    if (tStart < midiScheduledUpToActxTime) continue;
+    if (tStart > windowEnd) continue;
+
+    const schedStart = Math.max(now + 0.01, tStart);
+    const dur = Math.max(0.05, tEnd - schedStart);
+
+    if (midiSoundfontInstrument) {
+      const node = midiSoundfontInstrument.play(note, schedStart, { duration: dur, gain: 0.8, destination: midiMasterGain });
+      if (node) midiPlaybackNodes.push(node);
+    } else {
+      // Fallback oscillator while soundfont loads
+      const freq = 440 * Math.pow(2, (note - 69) / 12);
+      const osc = actx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const env = actx.createGain();
+      env.gain.setValueAtTime(0, schedStart);
+      env.gain.linearRampToValueAtTime(0.4, schedStart + 0.01);
+      env.gain.exponentialRampToValueAtTime(0.001, schedStart + dur);
+      osc.connect(env); env.connect(midiMasterGain);
+      osc.start(schedStart); osc.stop(schedStart + dur + 0.01);
+      midiPlaybackNodes.push(osc);
+    }
+  }
+
+  midiScheduledUpToActxTime = windowEnd;
+}
+
+// Called when the normal play button starts playback.
+function startMidiWithAudio(actx) {
+  const midiPanelVisible = !document.getElementById('midiPanel')?.classList.contains('hidden');
+  if ((!midiOverlayEnabled && !midiPanelVisible) || spectoColorSchemeParam !== 4) return;
+  stopMidiPlayback();
+
+  midiMasterGain = actx.createGain();
+  midiMasterGain.gain.value = document.getElementById('toggleMidiMute')?.classList.contains('muted') ? 0 : 0.3;
+  midiMasterGain.connect(actx.destination);
+
+  const runScheduler = () => {
+    scheduleMidiPass(actx);
+    midiSchedulerInterval = setInterval(() => {
+      if (!isPlaying) { stopMidiPlayback(); return; }
+      scheduleMidiPass(actx);
+    }, MIDI_SCHEDULE_INTERVAL);
+  };
+
+  // Load soundfont if not already loaded
+  if (midiSoundfontInstrument) {
+    runScheduler();
+  } else if (!midiSoundfontLoading && typeof Soundfont !== 'undefined') {
+    midiSoundfontLoading = true;
+    Soundfont.instrument(actx, 'acoustic_grand_piano', { soundfont: 'MusyngKite' })
+      .then(inst => {
+        midiSoundfontInstrument = inst;
+        midiSoundfontLoading = false;
+        // Reset the schedule window so the next pass reschedules with real piano samples
+        midiScheduledUpToActxTime = 0;
+      })
+      .catch(() => { midiSoundfontLoading = false; });
+    // Don't run scheduler until soundfont is ready — brief silence is better than cheap synth
+    setTimeout(() => { if (isPlaying) runScheduler(); }, 300);
+  } else {
+    runScheduler();
+  }
+}
+
+// Route audioSource through a gain node so Audio mute works.
+// Called right before audioSource.connect() in the play handler.
+function wrapAudioWithGain(actx) {
+  audioPlayGain = actx.createGain();
+  audioPlayGain.gain.value = document.getElementById('toggleAudioMute')?.classList.contains('muted') ? 0 : 1;
+  audioPlayGain.connect(actx.destination);
+  return audioPlayGain;
+}
+
+function toggleMidiMute() {
+  const btn = document.getElementById('toggleMidiMute');
+  const muted = btn?.classList.toggle('muted');
+  if (midiMasterGain) midiMasterGain.gain.value = muted ? 0 : 0.3;
+  if (btn) btn.textContent = muted ? 'Unmute MIDI' : 'Mute MIDI';
+}
+
+function toggleAudioMute() {
+  const btn = document.getElementById('toggleAudioMute');
+  const muted = btn?.classList.toggle('muted');
+  if (audioPlayGain) audioPlayGain.gain.value = muted ? 0 : 1;
+  if (btn) btn.textContent = muted ? 'Unmute Audio' : 'Mute Audio';
+}
+
+document.getElementById('toggleMidiMute')?.addEventListener('click', toggleMidiMute);
+document.getElementById('toggleAudioMute')?.addEventListener('click', toggleAudioMute);
 
 run();

@@ -14,6 +14,7 @@
 
     <link href="./style.css" rel="stylesheet" />
 
+    <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
     <script type="module" src="./script.js"></script>
   </head>
   <body class="bg-black text-white" style="display:flex; flex-direction:column; height:100vh; overflow:hidden; margin:0; padding:0;">
@@ -348,6 +349,44 @@
           Playhead line lights up with pitch colors from the spectrogram.
         </div>
 
+        <div class="flex items-center gap-2">
+          <input type="checkbox" id="midiOverlay" class="w-4 h-4" />
+          <label for="midiOverlay">MIDI Overlay</label>
+        </div>
+        <div class="text-xs text-gray-400 -mt-2">
+          Detects sustained notes from Circle of Fifths color scheme and draws a MIDI-like overlay.
+        </div>
+        <div id="midiOverlayControls" class="hidden space-y-3 pl-2 border-l border-purple-500/40">
+          <div>
+            <label for="midiMinBrightness" class="block mb-1">Min brightness: <span id="midiMinBrightnessValue">0.15</span></label>
+            <input type="range" id="midiMinBrightness" min="0.05" max="0.5" step="0.01" value="0.15" class="w-full" />
+          </div>
+          <div>
+            <label for="midiMinDuration" class="block mb-1">Min duration (cols): <span id="midiMinDurationValue">10</span></label>
+            <input type="range" id="midiMinDuration" min="2" max="50" step="1" value="10" class="w-full" />
+          </div>
+          <div>
+            <label for="midiMaxSimultaneous" class="block mb-1">Max simultaneous notes: <span id="midiMaxSimultaneousValue">4</span></label>
+            <input type="range" id="midiMaxSimultaneous" min="2" max="10" step="1" value="4" class="w-full" />
+          </div>
+          <div>
+            <label for="midiTimeOffset" class="block mb-1">MIDI time offset: <span id="midiTimeOffsetValue">0.00</span>s</label>
+            <input type="range" id="midiTimeOffset" min="-2" max="2" step="0.01" value="0" class="w-full" />
+          </div>
+          <div class="flex gap-2 items-center pt-1 flex-wrap">
+            <button id="toggleMidiMute" class="px-3 py-1.5 bg-yellow-800 rounded hover:bg-yellow-700 text-sm">
+              Mute MIDI
+            </button>
+            <button id="toggleAudioMute" class="px-3 py-1.5 bg-blue-800 rounded hover:bg-blue-700 text-sm">
+              Mute Audio
+            </button>
+            <button id="exportMidi" class="px-3 py-1.5 bg-purple-600 rounded hover:bg-purple-700 text-sm">
+              Export MIDI
+            </button>
+          </div>
+          <div class="text-xs text-gray-400">Use normal Play button. Mute either channel for A/B.</div>
+        </div>
+
         <div class="flex gap-2 items-center">
           <button
             id="exportPng"
@@ -451,6 +490,12 @@
         ></canvas>
         <canvas
           id="playbackCanvas"
+          width="1000"
+          height="1000"
+          style="position: absolute; top: 0; left: 0; pointer-events: none"
+        ></canvas>
+        <canvas
+          id="midiCanvas"
           width="1000"
           height="1000"
           style="position: absolute; top: 0; left: 0; pointer-events: none"

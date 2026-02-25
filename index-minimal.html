@@ -11,7 +11,14 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dominant-baseline='central' font-size='80'%3E😀%3C/text%3E%3C/svg%3E"
     />
     <link href="./style.css" rel="stylesheet" />
-    <script>localStorage.setItem('spectrumPlayhead', '1');</script>
+    <script>
+      localStorage.setItem('spectrumPlayhead', '1');
+      // Default to Circle of Fifths colour scheme for minimal page
+      if (!localStorage.getItem('specto-settings')) {
+        localStorage.setItem('spectoColorScheme', '4');
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
     <script type="module" src="./script.js"></script>
   </head>
   <body class="bg-black text-white" style="display:flex; flex-direction:column; height:100vh; overflow:hidden; margin:0; padding:0;">
@@ -73,6 +80,66 @@
 
       <!-- Info button -->
       <button onclick="document.getElementById('infoModal').style.display='flex'" class="px-3 py-2 bg-gray-700 rounded hover:bg-gray-600 text-sm" title="How it works">?</button>
+
+      <!-- MIDI toggle -->
+      <button onclick="
+        const p = document.getElementById('midiPanel');
+        const wasHidden = p.classList.contains('hidden');
+        p.classList.toggle('hidden');
+        if (wasHidden) {
+          const cb = document.getElementById('midiOverlay');
+          if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
+        }
+      " class="px-3 py-2 bg-purple-800 rounded hover:bg-purple-700 text-sm font-semibold" title="MIDI overlay">MIDI</button>
+    </div>
+
+    <!-- Spacer for sticky header -->
+    <div style="height: 58px; flex-shrink:0;"></div>
+
+    <!-- MIDI panel -->
+    <div id="midiPanel" class="hidden fixed z-50 bg-gray-900 border border-purple-700 rounded-xl shadow-xl text-sm" style="bottom:8px; right:0; padding:3px; width:260px;">
+      <div class="space-y-3" style="padding:13px 13px 13px 13px;">
+      <div class="flex justify-between items-center mb-1">
+        <span class="font-semibold text-purple-300">MIDI Overlay</span>
+        <button onclick="document.getElementById('midiPanel').classList.add('hidden')" class="text-gray-400 hover:text-white text-lg leading-none">✕</button>
+      </div>
+
+      <!-- Enable toggle (hidden — auto-enabled when panel opens) -->
+      <input type="checkbox" id="midiOverlay" class="w-4 h-4" style="display:none;" />
+      <div class="text-xs text-gray-400">Detects sustained notes from Circle of Fifths colour. Must be using CoF colour scheme.</div>
+
+      <!-- Sliders -->
+      <div>
+        <label class="block mb-1 text-gray-300">Min brightness: <span id="midiMinBrightnessValue">0.15</span></label>
+        <input type="range" id="midiMinBrightness" min="0.05" max="0.5" step="0.01" value="0.15" class="w-full" />
+      </div>
+      <div>
+        <label class="block mb-1 text-gray-300">Min duration (cols): <span id="midiMinDurationValue">10</span></label>
+        <input type="range" id="midiMinDuration" min="2" max="50" step="1" value="10" class="w-full" />
+      </div>
+      <div>
+        <label class="block mb-1 text-gray-300">Max simultaneous notes: <span id="midiMaxSimultaneousValue">4</span></label>
+        <input type="range" id="midiMaxSimultaneous" min="2" max="10" step="1" value="4" class="w-full" />
+      </div>
+      <div>
+        <label class="block mb-1 text-gray-300">MIDI time offset: <span id="midiTimeOffsetValue">0.00</span>s</label>
+        <input type="range" id="midiTimeOffset" min="-2" max="2" step="0.01" value="0" class="w-full" />
+      </div>
+
+      <!-- Playback mute toggles -->
+      <div class="border-t border-gray-700 pt-3 space-y-2">
+        <div class="text-xs text-gray-400">During playback — mute either channel to A/B:</div>
+        <div class="flex gap-2">
+          <button id="toggleMidiMute" class="flex-1 px-2 py-1.5 bg-yellow-800 rounded hover:bg-yellow-700 text-sm">Mute MIDI</button>
+          <button id="toggleAudioMute" class="flex-1 px-2 py-1.5 bg-blue-800 rounded hover:bg-blue-700 text-sm">Mute Audio</button>
+        </div>
+      </div>
+
+      <!-- Export -->
+      <div class="border-t border-gray-700 pt-3">
+        <button id="exportMidi" class="w-full px-3 py-1.5 bg-purple-600 rounded hover:bg-purple-700 text-sm">Export MIDI (.mid)</button>
+      </div>
+      </div><!-- end inner padding wrapper -->
     </div>
 
     <!-- Info modal -->
@@ -97,8 +164,6 @@
       </div>
     </div>
 
-    <!-- Spacer for sticky header -->
-    <div style="height: 58px; flex-shrink:0;"></div>
 
     <style>
       .band-item { margin-bottom:15px; padding:15px; background:#374151; border-radius:8px; border:1px solid #4b5563; position:relative; }
@@ -141,7 +206,7 @@
         <label>Max Frequency: <span id="maxFreqValue">12850</span> Hz</label>
         <input type="range" id="maxFreq" min="1000" max="22050" step="50" value="12850" />
         <select id="scaleMode"><option value="0">Linear</option><option value="1">Logarithmic</option><option value="2">Mel</option><option value="3">Bark</option><option value="4">ERB</option><option value="5">Period (Pitch)</option></select>
-        <select id="sonoColorScheme"><option value="0">Viridis (Purple-Yellow)</option><option value="1">Hot (Black-Red-Yellow-White)</option><option value="2">Grayscale</option><option value="3">Spectral (Rainbow)</option><option value="4">Circle of Fifths (Pitch Hue)</option></select>
+        <select id="spectoColorScheme"><option value="0">Viridis (Purple-Yellow)</option><option value="1">Hot (Black-Red-Yellow-White)</option><option value="2">Grayscale</option><option value="3">Spectral (Rainbow)</option><option value="4" selected>Circle of Fifths (Pitch Hue)</option></select>
         <div id="fifthsHueOffsetWrap" class="hidden">
           <label>Desaturation: <span id="desaturationAmountValue">0.6</span></label>
           <input type="range" id="desaturationAmount" min="0" max="1" step="0.05" value="0.6" />
@@ -193,6 +258,7 @@
         <canvas id="spectrogramCanvas" width="1000" height="1000"></canvas>
         <canvas id="overlayCanvas" width="1000" height="1000" style="position:absolute; top:0; left:0; pointer-events:none"></canvas>
         <canvas id="playbackCanvas" width="1000" height="1000" style="position:absolute; top:0; left:0; pointer-events:none"></canvas>
+        <canvas id="midiCanvas" width="1000" height="1000" style="position:absolute; top:0; left:0; pointer-events:none"></canvas>
         <div id="tooltip" style="position:absolute; background:rgba(0,0,0,0.9); color:white; padding:8px 12px; border-radius:4px; font-size:12px; display:none; pointer-events:none; white-space:nowrap; z-index:1000;">
           <div id="tooltipTime"></div>
           <div id="tooltipFreq"></div>
