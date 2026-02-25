@@ -373,6 +373,14 @@
             <label for="midiTimeOffset" class="block mb-1">MIDI time offset: <span id="midiTimeOffsetValue">0.00</span>s</label>
             <input type="range" id="midiTimeOffset" min="-2" max="2" step="0.01" value="0" class="w-full" />
           </div>
+          <div>
+            <label for="midiMinFreq" class="block mb-1">Min freq: <span id="midiMinFreqValue">80 Hz</span></label>
+            <input type="range" id="midiMinFreq" min="20" max="2000" step="10" value="80" class="w-full" />
+          </div>
+          <div>
+            <label for="midiMaxFreq" class="block mb-1">Max freq: <span id="midiMaxFreqValue">4000 Hz</span></label>
+            <input type="range" id="midiMaxFreq" min="500" max="12000" step="100" value="4000" class="w-full" />
+          </div>
           <div class="flex gap-2 items-center pt-1 flex-wrap">
             <button id="toggleMidiMute" class="px-3 py-1.5 bg-yellow-800 rounded hover:bg-yellow-700 text-sm">
               Mute MIDI
@@ -385,6 +393,10 @@
             </button>
           </div>
           <div class="text-xs text-gray-400">Use normal Play button. Mute either channel for A/B.</div>
+          <div class="flex items-center gap-2 pt-1">
+            <button id="detectKeyBtn" class="px-3 py-1.5 bg-indigo-700 rounded hover:bg-indigo-600 text-sm">Detect Key</button>
+            <span id="detectedKey" class="text-purple-300 font-semibold text-sm"></span>
+          </div>
         </div>
 
         <div class="flex gap-2 items-center">

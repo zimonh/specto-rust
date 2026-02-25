@@ -2609,7 +2609,9 @@ let midiOverlayEnabled = false;
 let midiMinBrightnessParam = 0.15;
 let midiMinDurationParam = 10;
 let midiMaxSimultaneousParam = 4;
-let midiTimeOffsetParam = 0; // seconds: positive = MIDI plays later, negative = MIDI plays earlier
+let midiTimeOffsetParam = 0;
+let midiMinFreqParam = 80;
+let midiMaxFreqParam = 4000; // seconds: positive = MIDI plays later, negative = MIDI plays earlier
 
 const midiOverlayCheckbox = document.getElementById('midiOverlay');
 const midiOverlayControls = document.getElementById('midiOverlayControls');
@@ -2650,6 +2652,25 @@ if (midiMaxSimultaneousSlider) {
   midiMaxSimultaneousSlider.addEventListener('input', () => {
     midiMaxSimultaneousParam = parseInt(midiMaxSimultaneousSlider.value);
     if (midiMaxSimultaneousValueEl) midiMaxSimultaneousValueEl.textContent = String(midiMaxSimultaneousParam);
+    drawMidiOverlay();
+  });
+}
+
+const midiMinFreqSlider = document.getElementById('midiMinFreq');
+const midiMinFreqValueEl = document.getElementById('midiMinFreqValue');
+const midiMaxFreqSlider = document.getElementById('midiMaxFreq');
+const midiMaxFreqValueEl = document.getElementById('midiMaxFreqValue');
+if (midiMinFreqSlider) {
+  midiMinFreqSlider.addEventListener('input', () => {
+    midiMinFreqParam = parseInt(midiMinFreqSlider.value);
+    if (midiMinFreqValueEl) midiMinFreqValueEl.textContent = midiMinFreqParam + ' Hz';
+    drawMidiOverlay();
+  });
+}
+if (midiMaxFreqSlider) {
+  midiMaxFreqSlider.addEventListener('input', () => {
+    midiMaxFreqParam = parseInt(midiMaxFreqSlider.value);
+    if (midiMaxFreqValueEl) midiMaxFreqValueEl.textContent = midiMaxFreqParam + ' Hz';
     drawMidiOverlay();
   });
 }
@@ -2703,6 +2724,45 @@ function rgbToHue(r, g, b) {
   return hue;
 }
 
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+function detectKey() {
+  if (spectoColorSchemeParam !== 4 || !canvas) return null;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  if (w === 0 || h === 0) return null;
+
+  // Sample every 4th column for speed
+  const step = 4;
+  const pcWeights = new Float32Array(12);
+
+  for (let x = 0; x < w; x += step) {
+    const px = ctx.getImageData(x, 0, 1, h).data;
+    for (let y = 0; y < h; y++) {
+      const i = y * 4;
+      const r = px[i], g = px[i+1], b = px[i+2];
+      const brightness = (r + g + b) / 765;
+      if (brightness < midiMinBrightnessParam) continue;
+      const freq = canvasYToFreq(y, h);
+      if (freq < midiMinFreqParam || freq > midiMaxFreqParam) continue;
+      const hue = rgbToHue(r, g, b);
+      const pc = hueToNoteClass(hue);
+      pcWeights[pc] += brightness;
+    }
+  }
+
+  // Find root as the pitch class with highest total weight
+  let root = 0;
+  for (let i = 1; i < 12; i++) if (pcWeights[i] > pcWeights[root]) root = i;
+
+  // Major vs minor: compare weight of major third (+4) vs minor third (+3)
+  const majorThird = pcWeights[(root + 4) % 12];
+  const minorThird = pcWeights[(root + 3) % 12];
+  const quality = majorThird >= minorThird ? 'Major' : 'Minor';
+
+  return `${NOTE_NAMES[root]} ${quality}`;
+}
+
 function canvasYToFreq(y, canvasHeight) {
   // Y=0 is top (high freq), Y=canvasHeight is bottom (low freq)
   const ratio = (canvasHeight - y) / canvasHeight;
@@ -2749,7 +2809,7 @@ function analyzeMidiNotes() {
         const hue = rgbToHue(r, g, b);
         const noteClass = hueToNoteClass(hue);
         const freq = canvasYToFreq(y, canvasHeight);
-        if (freq <= 0) continue;
+        if (freq <= 0 || freq < midiMinFreqParam || freq > midiMaxFreqParam) continue;
         const noteNum = freqToMidiNote(freq);
         if (noteNum === null) continue;
 
@@ -2997,7 +3057,7 @@ function analyzeMidiNotesFromCanvas(srcCanvas, canvasWidth, canvasHeight) {
         if ((r + g + b) / 765 < midiMinBrightnessParam) continue;
         const noteClass = hueToNoteClass(rgbToHue(r, g, b));
         const freq = canvasYToFreq(y, canvasHeight);
-        if (freq <= 0) continue;
+        if (freq <= 0 || freq < midiMinFreqParam || freq > midiMaxFreqParam) continue;
         const noteNum = freqToMidiNote(freq);
         if (noteNum === null) continue;
         if (!notePitchClasses.has(noteNum)) notePitchClasses.set(noteNum, noteClass);
@@ -3029,6 +3089,15 @@ function analyzeMidiNotesFromCanvas(srcCanvas, canvasWidth, canvasHeight) {
 const exportMidiBtn = document.getElementById('exportMidi');
 if (exportMidiBtn) exportMidiBtn.addEventListener('click', exportMidi);
 
+const detectKeyBtn = document.getElementById('detectKeyBtn');
+const detectedKeyEl = document.getElementById('detectedKey');
+if (detectKeyBtn) {
+  detectKeyBtn.addEventListener('click', () => {
+    const key = detectKey();
+    if (detectedKeyEl) detectedKeyEl.textContent = key ?? '—';
+  });
+}
+
 // ----- MIDI piano playback -----
 // MIDI plays alongside normal audio when midiOverlayEnabled is true.
 // Uses a rolling scheduler that re-analyses the canvas every MIDI_SCHEDULE_INTERVAL seconds
@@ -3037,17 +3106,17 @@ let midiPlaybackNodes = [];
 let midiMasterGain = null;
 let audioPlayGain = null;
 let midiSchedulerInterval = null;
-let midiScheduledUpToActxTime = 0; // actx time we've scheduled notes up to
+let midiScheduledSongTimes = new Set(); // "note:songTimeSec_2dp" keys already scheduled
 let midiSoundfontInstrument = null; // soundfont-player instrument instance
 let midiSoundfontLoading = false;
 
 const MIDI_LOOKAHEAD = 8;        // seconds ahead to schedule
-const MIDI_SCHEDULE_INTERVAL = 4000; // ms between reschedule passes
+const MIDI_SCHEDULE_INTERVAL = 2000; // ms between reschedule passes
 
 function stopMidiPlayback() {
   clearInterval(midiSchedulerInterval);
   midiSchedulerInterval = null;
-  midiScheduledUpToActxTime = 0;
+  midiScheduledSongTimes = new Set();
   for (const n of midiPlaybackNodes) { try { n.stop(); } catch (_) {} }
   midiPlaybackNodes = [];
   midiMasterGain = null;
@@ -3058,38 +3127,44 @@ function stopAudioPlayGain() {
 }
 
 // Schedule any notes from the current canvas that fall within the lookahead window
-// and haven't been scheduled yet (start time > midiScheduledUpToActxTime).
+// and haven't been scheduled yet. Keyed by song-time so scrolling doesn't cause gaps.
 function scheduleMidiPass(actx) {
   if (!midiMasterGain || !spectrogramInfo) return;
   const [, sampleRateVal] = spectrogramInfo;
   const regions = analyzeMidiNotes();
-  if (regions.length === 0) return;
 
   const now = actx.currentTime;
-  // Convert canvas x → absolute actx time
-  const xToActxTime = x => {
-    const songSec = ((scrollOffset + x / timeZoom) * hopSizeParam) / sampleRateVal;
-    return songSec + midiTimeOffsetParam;
-  };
-
   const windowEnd = now + MIDI_LOOKAHEAD;
 
+  // Purge stale keys for notes already past (keeps Set from growing forever)
+  const songNow = (now - midiTimeOffsetParam);
+  for (const key of midiScheduledSongTimes) {
+    const t = parseFloat(key.split(':')[1]);
+    if (t < songNow - 2) midiScheduledSongTimes.delete(key);
+  }
+
+  // Convert canvas x → song time and actx time
+  const xToSongSec = x => ((scrollOffset + x / timeZoom) * hopSizeParam) / sampleRateVal;
+  const xToActxTime = x => xToSongSec(x) + midiTimeOffsetParam;
+
   for (const { note, xStart, xEnd } of regions) {
+    const songSec = xToSongSec(xStart);
+    const key = `${note}:${songSec.toFixed(2)}`;
+    if (midiScheduledSongTimes.has(key)) continue; // already scheduled
+
     const tStart = xToActxTime(xStart);
     const tEnd = xToActxTime(xEnd);
-    // Skip notes already past or already scheduled
-    if (tEnd < now) continue;
-    if (tStart < midiScheduledUpToActxTime) continue;
-    if (tStart > windowEnd) continue;
+    if (tEnd < now) continue;          // already passed
+    if (tStart > windowEnd) continue;  // too far ahead
 
     const schedStart = Math.max(now + 0.01, tStart);
     const dur = Math.max(0.05, tEnd - schedStart);
+    midiScheduledSongTimes.add(key);
 
     if (midiSoundfontInstrument) {
       const node = midiSoundfontInstrument.play(note, schedStart, { duration: dur, gain: 0.8, destination: midiMasterGain });
       if (node) midiPlaybackNodes.push(node);
     } else {
-      // Fallback oscillator while soundfont loads
       const freq = 440 * Math.pow(2, (note - 69) / 12);
       const osc = actx.createOscillator();
       osc.type = 'triangle';
@@ -3103,8 +3178,6 @@ function scheduleMidiPass(actx) {
       midiPlaybackNodes.push(osc);
     }
   }
-
-  midiScheduledUpToActxTime = windowEnd;
 }
 
 // Called when the normal play button starts playback.
@@ -3134,8 +3207,8 @@ function startMidiWithAudio(actx) {
       .then(inst => {
         midiSoundfontInstrument = inst;
         midiSoundfontLoading = false;
-        // Reset the schedule window so the next pass reschedules with real piano samples
-        midiScheduledUpToActxTime = 0;
+        // Clear scheduled keys so next pass reschedules everything with real piano samples
+        midiScheduledSongTimes = new Set();
       })
       .catch(() => { midiSoundfontLoading = false; });
     // Don't run scheduler until soundfont is ready — brief silence is better than cheap synth
