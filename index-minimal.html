@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sonorust - Minimal</title>
+    <script src="./coi-serviceworker.js"></script>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dominant-baseline='central' font-size='80'%3E😀%3C/text%3E%3C/svg%3E"
+    />
+    <link href="./style.css" rel="stylesheet" />
+    <script>localStorage.setItem('spectrumPlayhead', '1');</script>
+    <script type="module" src="./script.js"></script>
+  </head>
+  <body class="bg-black text-white" style="display:flex; flex-direction:column; height:100vh; overflow:hidden; margin:0; padding:0;">
+
+    <!-- Minimal Top Bar -->
+    <div id="topBar" class="fixed top-0 left-0 right-0 z-40 bg-gray-900 border-b border-purple-600 px-6 py-3 flex items-center gap-4 flex-wrap" style="transition: opacity 0.4s ease;">
+
+      <!-- Upload -->
+      <label for="audioFile" style="cursor:pointer; display:flex; align-items:center; gap:6px; padding:8px 14px; background:#374151; border:1px solid #6b7280; border-radius:6px; font-size:14px; font-weight:600; color:#f9fafb; white-space:nowrap; transition:background 150ms;" onmouseover="this.style.background='#4b5563'" onmouseout="this.style.background='#374151'">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <span id="uploadLabel">Upload Audio</span>
+      </label>
+      <input
+        type="file"
+        id="audioFile"
+        accept=".mp3,.wav,.aif,.aiff,.aifc,.ogg,.oga,.flac,.m4a,.mp4,audio/*"
+        class="text-sm"
+        style="display:none;"
+        onchange="document.getElementById('uploadLabel').textContent = this.files[0]?.name ?? 'Upload Audio'"
+      />
+
+      <!-- Play/Pause -->
+      <button
+        id="playPause"
+        class="px-4 py-2 bg-green-500 rounded hover:bg-green-600"
+        disabled
+      >
+        Play
+      </button>
+
+
+      <!-- Zoom 50% -->
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="zoom50" />
+        <span>50% Zoom</span>
+      </label>
+
+
+      <!-- Follow -->
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" id="followPlayback" />
+        <span>Follow</span>
+      </label>
+
+      <!-- Gain -->
+      <div class="flex items-center gap-2">
+        <label for="gainDb" class="text-sm whitespace-nowrap">Gain: <span id="gainDbValue">-48.5</span> dB</label>
+        <input type="range" id="gainDb" min="-60" max="20" step="0.5" value="-48.5" class="w-32" />
+      </div>
+
+      <!-- Hue Offset (only relevant when Circle of Fifths color scheme is active) -->
+      <div class="flex items-center gap-2">
+        <label for="fifthsHueOffset" class="text-sm whitespace-nowrap">Hue: <span id="fifthsHueOffsetValue">0°</span></label>
+        <input type="range" id="fifthsHueOffset" min="0" max="360" step="1" value="0" class="w-24" />
+      </div>
+
+      <!-- Reload -->
+      <button id="reloadAudio" class="px-4 py-2 bg-purple-500 rounded hover:bg-purple-600">Reload</button>
+
+      <!-- Info button -->
+      <button onclick="document.getElementById('infoModal').style.display='flex'" class="px-3 py-2 bg-gray-700 rounded hover:bg-gray-600 text-sm" title="How it works">?</button>
+    </div>
+
+    <!-- Info modal -->
+    <div id="infoModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.8); align-items:center; justify-content:center;" onclick="if(event.target===this)this.style.display='none'">
+      <div style="background:#1f2937; border:1px solid #6b21a8; border-radius:12px; padding:28px 32px; max-width:560px; width:90%; max-height:80vh; overflow-y:auto; color:#f9fafb; font-size:14px; line-height:1.7;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <h2 style="margin:0; font-size:18px; font-weight:700; color:#a78bfa;">How it works</h2>
+          <button onclick="document.getElementById('infoModal').style.display='none'" style="background:none; border:none; color:#9ca3af; font-size:20px; cursor:pointer; line-height:1;">✕</button>
+        </div>
+
+        <h3 style="color:#c4b5fd; margin:0 0 6px;">What is a spectrogram?</h3>
+        <p style="margin:0 0 12px;">A <a href="https://en.wikipedia.org/wiki/Spectrogram" target="_blank" style="color:#818cf8;">spectrogram</a> visualises the frequency content of audio over time. The horizontal axis is time, the vertical axis is frequency, and brightness shows how loud each frequency is at each moment. It is computed using the <a href="https://en.wikipedia.org/wiki/Fast_Fourier_transform" target="_blank" style="color:#818cf8;">Fast Fourier Transform (FFT)</a>.</p>
+
+        <h3 style="color:#c4b5fd; margin:0 0 6px;">Circle of Fifths colour scheme</h3>
+        <p style="margin:0 0 12px;">Instead of brightness, this mode colours each frequency by its musical <a href="https://en.wikipedia.org/wiki/Pitch_class" target="_blank" style="color:#818cf8;">pitch class</a> (C, C#, D … B) and maps it around the <a href="https://en.wikipedia.org/wiki/Circle_of_fifths" target="_blank" style="color:#818cf8;">Circle of Fifths</a> — a layout where harmonically related keys sit close together. The result is that chords and harmonics share similar hues, making musical structure visible at a glance.</p>
+
+        <h3 style="color:#c4b5fd; margin:0 0 6px;">Multi-band resolution</h3>
+        <p style="margin:0 0 12px;">Low frequencies need a larger FFT window to resolve individual notes, while high frequencies can use a smaller one for better time resolution. This viewer uses a technique inspired by <a href="https://en.wikipedia.org/wiki/Constant-Q_transform" target="_blank" style="color:#818cf8;">Constant-Q analysis</a> — different frequency bands can be rendered with different FFT sizes simultaneously, giving the best of both worlds.</p>
+
+        <h3 style="color:#c4b5fd; margin:0 0 6px;">Built with</h3>
+        <p style="margin:0;">Rust + <a href="https://en.wikipedia.org/wiki/WebAssembly" target="_blank" style="color:#818cf8;">WebAssembly</a> for parallel FFT computation, with <a href="https://github.com/zimonh/specto-rust" target="_blank" style="color:#818cf8;">source on GitHub</a>.</p>
+      </div>
+    </div>
+
+    <!-- Spacer for sticky header -->
+    <div style="height: 58px; flex-shrink:0;"></div>
+
+    <style>
+      .band-item { margin-bottom:15px; padding:15px; background:#374151; border-radius:8px; border:1px solid #4b5563; position:relative; }
+      .band-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+      .band-header h4 { margin:0; font-size:14px; font-weight:600; color:#a78bfa; }
+      .btn-remove { padding:4px 8px; background:#ef4444; border:none; border-radius:4px; color:#fff; cursor:pointer; font-size:12px; }
+      .btn-remove:hover { background:#dc2626; }
+      .band-controls { display:grid; gap:10px; }
+      .band-control { display:flex; flex-direction:column; }
+      .band-control label { font-size:13px; margin-bottom:4px; }
+
+      :root { --spectrogram-width:1000px; --spectrogram-height:800px; }
+
+      #scrollContainer {
+        overflow:hidden; width:100%; height:100%; position:relative; background:#000;
+        scrollbar-width:none;
+      }
+      #scrollContainer::-webkit-scrollbar { display:none; }
+      #scrollContainer canvas { user-select:none; width:100%; height:100%; display:block; }
+
+      /* Hide the settings panel entirely in minimal mode */
+      #controls, #settingsToggle, #settingsCollapse, #controlsBackdrop { display:none !important; }
+    </style>
+
+    <!-- Hidden elements required by script.js (settings panel stubs) -->
+    <div id="controlsBackdrop" style="display:none;"></div>
+    <div id="controls" style="display:none;">
+      <button id="settingsCollapse"></button>
+      <div class="flex gap-2 border-b border-gray-600 mb-4 pb-1">
+        <button class="settings-tab active" data-tab="display">1. Display</button>
+        <button class="settings-tab" data-tab="multiband">2. Multi-Band</button>
+        <button class="settings-tab" data-tab="presets">Presets</button>
+      </div>
+      <div id="tab-display" class="tab-content">
+        <select id="windowType"><option value="0">Hann (default)</option><option value="1">Hamming</option><option value="2">Blackman</option><option value="3">Rectangular</option><option value="4">Blackman-Harris</option></select>
+        <label>Zero Padding Factor: <span id="zeroPadFactorValue">3x</span></label>
+        <input type="range" id="zeroPadFactor" min="1" max="8" step="1" value="3" />
+        <label>Min Frequency: <span id="minFreqValue">0</span> Hz</label>
+        <input type="range" id="minFreq" min="0" max="80" step="1" value="0" />
+        <label>Max Frequency: <span id="maxFreqValue">12850</span> Hz</label>
+        <input type="range" id="maxFreq" min="1000" max="22050" step="50" value="12850" />
+        <select id="scaleMode"><option value="0">Linear</option><option value="1">Logarithmic</option><option value="2">Mel</option><option value="3">Bark</option><option value="4">ERB</option><option value="5">Period (Pitch)</option></select>
+        <select id="sonoColorScheme"><option value="0">Viridis (Purple-Yellow)</option><option value="1">Hot (Black-Red-Yellow-White)</option><option value="2">Grayscale</option><option value="3">Spectral (Rainbow)</option><option value="4">Circle of Fifths (Pitch Hue)</option></select>
+        <div id="fifthsHueOffsetWrap" class="hidden">
+          <label>Desaturation: <span id="desaturationAmountValue">0.6</span></label>
+          <input type="range" id="desaturationAmount" min="0" max="1" step="0.05" value="0.6" />
+        </div>
+        <label>Range (dB): <span id="rangeDbValue">107</span></label>
+        <input type="range" id="rangeDb" min="20" max="120" step="1" value="107" />
+        <label>Frequency Gain (dB/dec): <span id="freqGainDbPerDecValue">5.0</span></label>
+        <input type="range" id="freqGainDbPerDec" min="-24" max="24" step="0.5" value="5" />
+        <input type="checkbox" id="showGrid" checked />
+        <input type="checkbox" id="spectrumPlayhead" checked />
+        <button id="exportPng">Export Full PNG</button>
+      </div>
+      <div id="tab-multiband" class="tab-content hidden">
+        <button id="addBand">+ Add Band</button>
+        <div id="bandsContainer"></div>
+      </div>
+      <div id="tab-presets" class="tab-content hidden">
+        <button id="exportSettings">Export Settings</button>
+        <button id="importSettingsBtn">Import Settings</button>
+        <input type="file" id="importSettings" accept=".json" class="hidden" />
+        <button class="preset-btn" data-preset="default">Default</button>
+        <button class="preset-btn" data-preset="color">Color</button>
+      </div>
+    </div>
+    <button id="settingsToggle" style="display:none;">Settings</button>
+
+    <!-- Loading toast -->
+    <div id="loadingToast" style="opacity:0; transition:opacity 0.5s ease; position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:100; background:#1f2937; border:1px solid #6b21a8; border-radius:20px; padding:8px 20px; font-size:13px; color:#a78bfa; pointer-events:none; white-space:nowrap;">
+      ✓ Song loaded
+    </div>
+
+    <!-- Spectrogram display container -->
+    <div style="position:relative; flex:1 1 0; min-height:0; display:flex;" id="spectroWrapper">
+      <!-- Welcome overlay — hidden once audio loads -->
+      <div id="welcomeOverlay" style="position:absolute; inset:0; z-index:10; display:flex; align-items:center; justify-content:center; background:#000;">
+        <div style="max-width:480px; padding:32px; text-align:center; color:#d1d5db; font-size:14px; line-height:1.8;">
+          <p style="font-size:22px; font-weight:700; color:#a78bfa; margin:0 0 20px;">Upload audio to get started</p>
+
+          <p style="margin:0 0 16px;">Need a song? Google <strong style="color:#f9fafb;">"Spotify Downloader"</strong> — sites like <em>SpotDL</em> let you download songs, playlists, albums and artist discographies directly from Spotify.</p>
+
+          <div style="border-top:1px solid #374151; margin:20px 0;"></div>
+
+          <p style="margin:0 0 8px;"><span style="color:#c4b5fd;">💡 Gain slider</span> — adjusts brightness. Turn it up if the spectrogram looks dark, down if it's washed out.</p>
+          <p style="margin:0;"><span style="color:#c4b5fd;">🎨 Hue rotate</span> — shifts all note colours together while keeping their relationships accurate. The Circle of Fifths mapping is relative, so rotating never breaks harmonic accuracy — C and G will always be close in hue no matter where you rotate to.</p>
+        </div>
+      </div>
+
+      <div id="scrollContainer">
+        <canvas id="spectrogramCanvas" width="1000" height="1000"></canvas>
+        <canvas id="overlayCanvas" width="1000" height="1000" style="position:absolute; top:0; left:0; pointer-events:none"></canvas>
+        <canvas id="playbackCanvas" width="1000" height="1000" style="position:absolute; top:0; left:0; pointer-events:none"></canvas>
+        <div id="tooltip" style="position:absolute; background:rgba(0,0,0,0.9); color:white; padding:8px 12px; border-radius:4px; font-size:12px; display:none; pointer-events:none; white-space:nowrap; z-index:1000;">
+          <div id="tooltipTime"></div>
+          <div id="tooltipFreq"></div>
+          <div id="tooltipNote"></div>
+          <div id="tooltipAmp"></div>
+        </div>
+      </div>
+    </div>
+
+  </body>
+</html>

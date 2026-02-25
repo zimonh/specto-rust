@@ -1,0 +1,33 @@
+/* tslint:disable */
+/* eslint-disable */
+export const cancel_generation: () => void;
+export const load_audio_mp3: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const load_audio_bytes: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+export const load_audio_pcm_mono_f32: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const get_spectrogram_info: (a: number) => [number, number, number, number];
+export const update_spectrogram_params: (a: number, b: number, c: number) => [number, number];
+export const set_desaturation_amount: (a: number, b: number) => [number, number];
+export const set_multiband_config: (a: number, b: number, c: number) => [number, number];
+export const get_multiband_config: (a: number) => [number, number, number, number];
+export const set_fifths_hue_offset: (a: number, b: number) => [number, number];
+export const render_spectrogram_viewport: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => [number, number, number, number];
+export const get_chords: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+export const unload_spectrogram: (a: number) => [number, number];
+export const generate_fractal: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => [number, number];
+export const __wbg_wbg_rayon_poolbuilder_free: (a: number, b: number) => void;
+export const wbg_rayon_poolbuilder_mainJS: (a: number) => any;
+export const wbg_rayon_poolbuilder_numThreads: (a: number) => number;
+export const wbg_rayon_poolbuilder_receiver: (a: number) => number;
+export const wbg_rayon_poolbuilder_build: (a: number) => void;
+export const initThreadPool: (a: number) => any;
+export const wbg_rayon_start_worker: (a: number) => void;
+export const __wbindgen_exn_store: (a: number) => void;
+export const __externref_table_alloc: () => number;
+export const __wbindgen_export_2: WebAssembly.Table;
+export const memory: WebAssembly.Memory;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_thread_destroy: (a?: number, b?: number, c?: number) => void;
+export const __wbindgen_start: (a: number) => void;
