@@ -164,6 +164,10 @@
           <button id="toggleMidiMute" class="flex-1 px-2 py-1.5 bg-yellow-800 rounded hover:bg-yellow-700 text-sm">Mute MIDI</button>
           <button id="toggleAudioMute" class="flex-1 px-2 py-1.5 bg-blue-800 rounded hover:bg-blue-700 text-sm">Mute Audio</button>
         </div>
+        <div>
+          <label class="block mb-1 text-gray-300">Song volume: <span id="audioVolumeValue">100%</span></label>
+          <input type="range" id="audioVolume" min="0" max="100" step="1" value="100" class="w-full" />
+        </div>
       </div>
 
       <!-- Key detection -->

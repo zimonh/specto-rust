@@ -1047,8 +1047,9 @@ zeroPadFactorSlider.addEventListener('input', () => {
 (function () {
   const midiZeroPad = document.getElementById('midiZeroPad');
   if (!midiZeroPad) return;
-  // Init value to match main slider
+  // Init value to match main slider; on minimal page set param from HTML default
   if (zeroPadFactorSlider) midiZeroPad.value = zeroPadFactorSlider.value;
+  else zeroPadFactorParam = parseInt(midiZeroPad.value);
   midiZeroPad.addEventListener('input', () => {
     zeroPadFactorParam = parseInt(midiZeroPad.value);
     const midiZeroPadValue = document.getElementById('midiZeroPadValue');
@@ -2663,7 +2664,20 @@ if (midiOverlayCheckbox) {
     }
     midiCanvas.style.display = midiOverlayEnabled ? '' : 'none';
     if (!midiOverlayEnabled) midiCtx.clearRect(0, 0, midiCanvas.width, midiCanvas.height);
-    else drawMidiOverlay();
+    else {
+      // Nudge hue offset to force a full re-render with correct canvas dimensions,
+      // then immediately restore — this ensures drawMidiOverlay runs after the
+      // spectrogram is painted at the right size.
+      if (fifthsHueOffsetSlider && spectrogramId !== null && spectoColorSchemeParam === 4) {
+        const cur = parseInt(fifthsHueOffsetSlider.value);
+        fifthsHueOffsetSlider.value = String(cur + 1);
+        fifthsHueOffsetSlider.dispatchEvent(new Event('input'));
+        fifthsHueOffsetSlider.value = String(cur);
+        fifthsHueOffsetSlider.dispatchEvent(new Event('input'));
+      } else {
+        drawMidiOverlay();
+      }
+    }
   });
 }
 
@@ -3343,7 +3357,8 @@ function startMidiWithAudio(actx) {
 // Called right before audioSource.connect() in the play handler.
 function wrapAudioWithGain(actx) {
   audioPlayGain = actx.createGain();
-  audioPlayGain.gain.value = document.getElementById('toggleAudioMute')?.classList.contains('muted') ? 0 : 1;
+  const vol = parseInt(document.getElementById('audioVolume')?.value ?? 100) / 100;
+  audioPlayGain.gain.value = document.getElementById('toggleAudioMute')?.classList.contains('muted') ? 0 : vol;
   audioPlayGain.connect(actx.destination);
   return audioPlayGain;
 }
@@ -3364,5 +3379,16 @@ function toggleAudioMute() {
 
 document.getElementById('toggleMidiMute')?.addEventListener('click', toggleMidiMute);
 document.getElementById('toggleAudioMute')?.addEventListener('click', toggleAudioMute);
+
+(function () {
+  const slider = document.getElementById('audioVolume');
+  const label = document.getElementById('audioVolumeValue');
+  if (!slider) return;
+  slider.addEventListener('input', () => {
+    const vol = parseInt(slider.value) / 100;
+    if (label) label.textContent = `${slider.value}%`;
+    if (audioPlayGain) audioPlayGain.gain.value = vol;
+  });
+})();
 
 run();
